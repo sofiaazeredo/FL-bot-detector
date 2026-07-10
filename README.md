@@ -157,27 +157,6 @@ The scorer returns a `ScoreResult` containing:
 
 ---
 
-## Current Limitations
-
-This implementation intentionally focuses on static engagement signals.
-
-It currently does **not** evaluate:
-
-* Subscriber growth over time
-* View velocity
-* Like velocity
-* Comment timing
-* Subscriber spikes
-* Audience retention
-* Watch time
-* Comment quality
-* Text similarity of comments
-* Temporal anomalies
-
-These may substantially improve detection performance in future versions.
-
----
-
 ## Intended Use
 
 This project is designed as an anomaly detection tool, not as definitive evidence of artificial engagement.
