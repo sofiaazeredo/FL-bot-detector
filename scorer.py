@@ -118,7 +118,7 @@ class StatisticalScorer:
             score += norm_z * weight
         return round(score, 4)
 
-    def _score_single(self, target_record: ChannelRecord, baseline_records: List[ChannelRecord], baseline_features: List[Dict], global_countries: set) -> Dict:
+    def score_single(self, target_record: ChannelRecord, baseline_records: List[ChannelRecord], baseline_features: List[Dict], global_countries: set) -> Dict:
             """Scores a single incoming influencer using the existing population as the peer baseline."""
             # Extract features using the fixed global country count
             target_feat = FeatureExtractor.extract(target_record, global_countries)
