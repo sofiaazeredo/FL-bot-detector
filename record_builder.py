@@ -38,7 +38,10 @@ class ChannelRecordBuilder:
         if refresh:
             ChannelExtractor.extract_data([channel_id])
 
-        public_doc = self.public_crud.get_collection().find_one({"channel_id": channel_id})
+        public_doc = self.public_crud.get_collection().find_one(
+            {"channel_id": channel_id},
+            sort=[("creation_date", -1)],  # matches the field name extract_channel_public_data actually sets
+        )
         insight_doc = self.insight_crud.get_collection().find_one(
             {"channel_id": channel_id},
             sort=[("collected_at", -1)],  # insights are historical/append-only; take the latest
