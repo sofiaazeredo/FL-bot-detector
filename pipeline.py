@@ -1,69 +1,80 @@
-import csv
-from models import CSVLoader
-from scorer import StatisticalScorer
-from refiner import WeightRefiner
+import logging
+from typing import List, Dict, Optional
+
+from .channel_record import ChannelRecord
+from .record_builder import ChannelRecordBuilder
+from .scorer import StatisticalScorer, FeatureExtractor
+from .refiner import WeightRefiner
+
+logger = logging.getLogger("father.bot-detection-pipeline")
+
 
 class BotDetectorPipeline:
-    def __init__(self, input_csv: str, output_csv: str):
-        self.input_csv = input_csv
-        self.output_csv = output_csv
-        self.loader = CSVLoader(input_csv)
+    """Two-stage bot-detection pipeline, sourced live from Brandconnect
+    (via ChannelExtractor + the Mongo CRUD layer) instead of a CSV file.
+
+    Usage:
+        pipeline = BotDetectorPipeline()
+
+        # Bootstrap / retrain the baseline on a known population.
+        # Run this once up front, and again periodically to keep the
+        # baseline + refiner current.
+        pipeline.run_population(channel_ids, refresh=True)
+
+        # From then on, score new influencers one at a time against the
+        # cached baseline:
+        result = pipeline.score_new_influencer("UCxxxxxxxxxxxxxxxxxxxxxx")
+    """
+
+    def __init__(self):
+        self.builder = ChannelRecordBuilder()
         self.scorer = StatisticalScorer()
         self.refiner = WeightRefiner()
 
-    def run(self):
-        print(f"[*] Loading data from {self.input_csv}...")
-        records = self.loader.load()
-        print(f"[*] Loaded {len(records)} records.")
+        self._baseline_records: List[ChannelRecord] = []
+        self._baseline_features: List[Dict] = []
+        self._global_countries: set = set()
+        self._trained = False
 
-        print("[*] Stage 1: Running statistical scoring...")
+    def run_population(self, channel_ids: List[str], refresh: bool = False) -> List[Dict]:
+        """Extracts (optionally) + scores a full population, and trains the
+        refiner + caches the baseline for later single-influencer scoring.
+        """
+        logger.info(f"[*] Building records for {len(channel_ids)} channels...")
+        records = self.builder.build_population(channel_ids, refresh=refresh)
+        logger.info(f"[*] Built {len(records)} valid records "
+                    f"({len(channel_ids) - len(records)} skipped due to missing data).")
+
+        logger.info("[*] Stage 1: Running statistical scoring...")
         stage1_results = self.scorer.score_population(records)
 
-        print("[*] Stage 2: Refining weights with PCA + Logistic Regression...")
+        logger.info("[*] Stage 2: Refining weights with PCA + SVM...")
         final_results = self.refiner.refine(stage1_results)
 
-        print(f"[*] Saving results to {self.output_csv}...")
-        self._save_results(final_results)
-        print("[+] Done!")
+        # Cache baseline state for score_new_influencer()
+        self._baseline_records = records
+        self._global_countries = {c for r in records for c in r.country_dist.keys()}
+        self._baseline_features = [
+            FeatureExtractor.extract(r, self._global_countries) for r in records
+        ]
+        self._trained = True
 
-    def _save_results(self, results):
-        if not results:
-            return
+        logger.info("[+] Baseline population trained and cached.")
+        return final_results
 
-        # Prepare headers: ID, Scores, then all features and anomalies
-        sample = results[0]
-        fieldnames = ['channel_id', 'suspicion_score', 'refined_score', 'risk_band']
-        
-        # Add feature and anomaly names
-        feat_names = [f"feat_{k}" for k in sample['features'].keys()]
-        anom_names = [f"anom_{k}" for k in sample['anomalies'].keys()]
-        fieldnames.extend(feat_names)
-        fieldnames.extend(anom_names)
+    def score_new_influencer(self, channel_id: str, refresh: bool = True) -> Optional[Dict]:
+        """Pulls one influencer live (via ChannelExtractor, if refresh=True)
+        and scores them against the cached baseline population.
+        """
+        if not self._trained:
+            raise ValueError("Call run_population() at least once before scoring single influencers.")
 
-        with open(self.output_csv, mode='w', encoding='utf-8', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for res in results:
-                row = {
-                    'channel_id': res['channel_id'],
-                    'suspicion_score': res['suspicion_score'],
-                    'refined_score': res['refined_score'],
-                    'risk_band': res['risk_band']
-                }
-                # Flatten features and anomalies
-                for k, v in res['features'].items():
-                    row[f"feat_{k}"] = round(v, 6) if isinstance(v, float) else v
-                for k, v in res['anomalies'].items():
-                    row[f"anom_{k}"] = round(v, 6) if isinstance(v, float) else v
-                
-                writer.writerow(row)
+        record = self.builder.build_single(channel_id, refresh=refresh)
+        if record is None:
+            logger.warning(f"Could not build a record for channel {channel_id}; skipping.")
+            return None
 
-if __name__ == "__main__":
-    import sys
-    # Use the provided file or default to sample
-    input_file = "youtube_sample_100k.csv"
-    output_file = "bot_detection_results.csv"
-    
-    pipeline = BotDetectorPipeline(input_file, output_file)
-    pipeline.run()
+        stage1_result = self.scorer.score_single(
+            record, self._baseline_records, self._baseline_features, self._global_countries
+        )
+        return self.refiner.refine_single(stage1_result)
