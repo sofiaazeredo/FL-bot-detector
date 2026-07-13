@@ -25,26 +25,13 @@ format.
 ## Project structure
 
 ```
-project_root/
-├── main.py                     # entry point / usage example
-├── models/
-│   └── bot_detection/
-│       ├── __init__.py
-│       ├── channel_record.py   # ChannelRecord dataclass
-│       ├── record_builder.py   # Brandconnect/Mongo -> ChannelRecord
-│       ├── scorer.py           # Stage 1: statistical peer-relative scoring
-│       ├── refiner.py          # Stage 2: PCA + SVM refinement
-│       └── pipeline.py         # orchestrates the two stages
-├── logs/
-├── youtube/
-│   └── extract/
-│       └── brandconnect/
-│           ├── extractors/
-│           │   └── channel_extractor.py   # pulls from Brandconnect API
-│           └── crud/
-│               ├── channelpublicdata_crud.py
-│               └── channelinsights_crud.py
-└── README.md
+bot_detection/
+    ├── __init__.py
+    ├── channel_record.py   # ChannelRecord dataclass
+    ├── record_builder.py   # Brandconnect/Mongo -> ChannelRecord
+    ├── scorer.py           # Stage 1: statistical peer-relative scoring
+    ├── refiner.py          # Stage 2: PCA + SVM refinement
+    └── pipeline.py         # orchestrates the two stages
 ```
 
 ## Data flow
